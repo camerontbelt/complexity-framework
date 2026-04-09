@@ -1,0 +1,15 @@
+metric,active_mean,inactive_mean,ratio,AUC,mann_whitney_p,cohens_d,significant_p001
+complexity,14.0905,1.5876,8.875,0.9912,2.66e-17,3.893,True
+entity_c,207.3124,7.4271,27.913,0.99,8.29e-18,2.915,True
+field_c,1.0302,0.5942,1.734,0.9892,3.58e-17,3.371,True
+sp_entropy,0.8375,0.8616,0.972,0.9628,1.58e-15,-2.909,True
+t_comp,0.8914,0.7024,1.269,0.9464,1.49e-14,2.698,True
+gzip_ratio,0.1893,0.4126,0.459,0.9448,1.85e-14,-2.674,True
+eoc_weight,0.3563,0.2975,1.198,0.9628,1.58e-15,2.881,True
+interact,4.9757,0.3632,13.7,0.99,6.31e-18,3.908,True
+size_div,0.5308,0.1598,3.321,0.8579,3.90e-10,2.018,True
+div_rate,0.7065,0.1573,4.491,0.8962,3.64e-12,2.527,True
+mean_cluster_count,11.9624,1.6578,7.216,0.9916,6.48e-18,4.086,True
+mean_largest_cluster_frac,0.1346,0.9157,0.147,0.9416,4.41e-15,-4.132,True
+mean_physical_entropy,0.8368,0.8598,0.973,0.96,2.33e-15,-2.744,True
+stability,0.8514,0.9297,0.916,0.7803,8.85e-07,-0.881,True
