@@ -54,14 +54,14 @@ This transition (continuous vs. first-order is still debated) is the model behin
 
 ### Voter Model
 
-| eps | C (mean ± SD) | Interpretation |
-|-----|---------------|----------------|
+| eps  | C (mean ± SD) | Interpretation                     |
+| ---- | ------------- | ---------------------------------- |
 | 0.00 | 0.595 ± 0.412 | Pure ordering: coarsening dynamics |
-| 0.03 | 0.025 ± 0.013 | Small noise disrupts coarsening |
-| 0.07 | 0.008 ± 0.005 | Disordered rapidly |
-| 0.15 | 0.004 ± 0.001 | — |
-| 0.25 | 0.003 ± 0.001 | — |
-| 0.40 | 0.003 ± 0.001 | Fully disordered |
+| 0.03 | 0.025 ± 0.013 | Small noise disrupts coarsening    |
+| 0.07 | 0.008 ± 0.005 | Disordered rapidly                 |
+| 0.15 | 0.004 ± 0.001 | —                                  |
+| 0.25 | 0.003 ± 0.001 | —                                  |
+| 0.40 | 0.003 ± 0.001 | Fully disordered                   |
 
 **Statistical result:** Peak C at eps = 0.0. Cohen's d = 1.86, p = 0.024. **H1 supported** (though the peak is at the extreme, not intermediate as predicted — see discussion below).
 
@@ -71,14 +71,14 @@ This transition (continuous vs. first-order is still debated) is the model behin
 
 ### Potts Model (q = 4)
 
-| T | C (mean ± SD) | Interpretation |
-|---|---------------|----------------|
-| 0.40 | 0.037 ± 0.022 | Deeply ordered, frozen domains |
-| 0.65 | 0.137 ± 0.095 | Growing fluctuations |
-| **0.910** **(T_c)** | **1.393 ± 0.256** | **Critical point** |
-| 1.15 | **2.730 ± 0.075** | **Peak C** (above T_c) |
-| 1.70 | 2.363 ± 0.056 | Disordered, richly structured |
-| 2.50 | 2.013 ± 0.055 | Approaching random, C declining |
+| T                   | C (mean ± SD)     | Interpretation                  |
+| ------------------- | ----------------- | ------------------------------- |
+| 0.40                | 0.037 ± 0.022     | Deeply ordered, frozen domains  |
+| 0.65                | 0.137 ± 0.095     | Growing fluctuations            |
+| **0.910** **(T_c)** | **1.393 ± 0.256** | **Critical point**              |
+| 1.15                | **2.730 ± 0.075** | **Peak C** (above T_c)          |
+| 1.70                | 2.363 ± 0.056     | Disordered, richly structured   |
+| 2.50                | 2.013 ± 0.055     | Approaching random, C declining |
 
 **Statistical result:** Peak at T = 1.15. Cohen's d = 44.35, p ≈ 0. **H1 supported.**
 
@@ -88,14 +88,14 @@ This transition (continuous vs. first-order is still debated) is the model behin
 
 ### Contact Process
 
-| lambda | C (mean ± SD) | Density | Interpretation |
-|--------|---------------|---------|----------------|
-| 0.25 | 0.000 ± 0.000 | 0.000 | Absorbing state (all dead) |
-| 0.40 | 0.000 ± 0.000 | 0.000 | Absorbing state |
-| 0.55 | 0.000 ± 0.000 | 0.000 | Absorbing state |
-| **0.75** | **1.967 ± 0.318** | 0.107 | **Peak C — just above transition** |
-| 1.10 | 0.021 ± 0.004 | 0.433 | Dense active phase |
-| 1.60 | 0.016 ± 0.002 | 0.564 | Saturated, near-uniform |
+| lambda   | C (mean ± SD)     | Density | Interpretation                     |
+| -------- | ----------------- | ------- | ---------------------------------- |
+| 0.25     | 0.000 ± 0.000     | 0.000   | Absorbing state (all dead)         |
+| 0.40     | 0.000 ± 0.000     | 0.000   | Absorbing state                    |
+| 0.55     | 0.000 ± 0.000     | 0.000   | Absorbing state                    |
+| **0.75** | **1.967 ± 0.318** | 0.107   | **Peak C — just above transition** |
+| 1.10     | 0.021 ± 0.004     | 0.433   | Dense active phase                 |
+| 1.60     | 0.016 ± 0.002     | 0.564   | Saturated, near-uniform            |
 
 **Statistical result:** Peak at lambda = 0.75. Cohen's d = 7.99, p ≈ 0. **H1 supported.**
 
@@ -105,16 +105,16 @@ This transition (continuous vs. first-order is still debated) is the model behin
 
 ### Boids / Vicsek Flocking
 
-| eta | C (mean ± SD) | Clump index | Interpretation |
-|-----|---------------|-------------|----------------|
-| 0.00 | 0.618 ± 0.249 | 2.80 | Perfect alignment, sweeping flock |
-| 0.50 | 1.962 ± 0.417 | 2.96 | Near-ordered flocking |
-| **1.00** | **2.118 ± 0.152** | 2.95 | **Peak C** |
-| 1.50 | 1.830 ± 0.313 | 2.98 | Turbulent sub-flocks |
-| 2.00 | 1.100 ± 0.027 | 2.75 | Near transition |
-| 2.50 | 1.020 ± 0.038 | 2.48 | Disordered |
-| 3.00 | 1.000 ± 0.026 | 2.37 | Disordered |
-| π | 1.021 ± 0.036 | 2.28 | Fully random |
+| eta      | C (mean ± SD)     | Clump index | Interpretation                    |
+| -------- | ----------------- | ----------- | --------------------------------- |
+| 0.00     | 0.618 ± 0.249     | 2.80        | Perfect alignment, sweeping flock |
+| 0.50     | 1.962 ± 0.417     | 2.96        | Near-ordered flocking             |
+| **1.00** | **2.118 ± 0.152** | 2.95        | **Peak C**                        |
+| 1.50     | 1.830 ± 0.313     | 2.98        | Turbulent sub-flocks              |
+| 2.00     | 1.100 ± 0.027     | 2.75        | Near transition                   |
+| 2.50     | 1.020 ± 0.038     | 2.48        | Disordered                        |
+| 3.00     | 1.000 ± 0.026     | 2.37        | Disordered                        |
+| π        | 1.021 ± 0.036     | 2.28        | Fully random                      |
 
 **Statistical result:** Peak at eta = 1.0. Cohen's d = 6.64 vs ordered, d = 9.09 vs disordered, p ≈ 0. **H1 supported.**
 
@@ -128,12 +128,12 @@ This transition (continuous vs. first-order is still debated) is the model behin
 
 Across all four experiments — and observed independently in a Directed Percolation experiment — C consistently peaks *away* from the exact critical threshold. The direction depends on which phase contains the richest dynamics:
 
-| Model | Critical point | C peak | Peak side | Reason |
-|-------|---------------|--------|-----------|--------|
-| Potts (spin model) | T_c = 0.91 | T = 1.15 | **Above** T_c | Ordered phase is frozen; complexity is in the fluctuating disordered phase |
-| Contact Process | lambda_c ≈ 0.60–0.65 | lambda = 0.75 | **Above** lambda_c | Absorbing phase gives C = 0 by definition; complex patterns emerge just above |
-| Directed Percolation | p_c = 0.287 | p = 0.35 | **Above** p_c | Same absorbing-state mechanism as Contact Process |
-| Boids (flocking) | eta_c ≈ 2.0 | eta = 1.0 | **Below** eta_c | Disordered phase is random walks; complexity is in the turbulent ordered flock |
+| Model                | Critical point       | C peak        | Peak side          | Reason                                                                         |
+| -------------------- | -------------------- | ------------- | ------------------ | ------------------------------------------------------------------------------ |
+| Potts (spin model)   | T_c = 0.91           | T = 1.15      | **Above** T_c      | Ordered phase is frozen; complexity is in the fluctuating disordered phase     |
+| Contact Process      | lambda_c ≈ 0.60–0.65 | lambda = 0.75 | **Above** lambda_c | Absorbing phase gives C = 0 by definition; complex patterns emerge just above  |
+| Directed Percolation | p_c = 0.287          | p = 0.35      | **Above** p_c      | Same absorbing-state mechanism as Contact Process                              |
+| Boids (flocking)     | eta_c ≈ 2.0          | eta = 1.0     | **Below** eta_c    | Disordered phase is random walks; complexity is in the turbulent ordered flock |
 
 **Proposed mechanism:** The C metric measures *dynamically rich* states — those with intermediate entropy, non-trivial spatial opacity, persistent temporal MI, and intermediate compressibility. The exact critical point is not always the richest dynamical state on a finite system:
 
@@ -151,11 +151,11 @@ Across all four experiments — and observed independently in a Directed Percola
 
 ## 4. Key Files
 
-| File | Role |
-|------|------|
-| `experiments/lattice-models/lattice-experiments.py` | Voter, Potts q=4, Contact Process |
-| `experiments/lattice-models/boids-experiment.py` | Vicsek flocking model |
-| `experiments/lattice-models/lattice_results.csv` | Raw sub-metric data, all seeds |
-| `experiments/lattice-models/lattice_results.png` | Three-panel C vs parameter plot |
-| `experiments/lattice-models/boids_results.csv` | Boids raw data |
-| `experiments/lattice-models/boids_results.png` | Boids C vs noise level + sub-metric breakdown |
+| File                                                | Role                                          |
+| --------------------------------------------------- | --------------------------------------------- |
+| `experiments/lattice-models/lattice-experiments.py` | Voter, Potts q=4, Contact Process             |
+| `experiments/lattice-models/boids-experiment.py`    | Vicsek flocking model                         |
+| `experiments/lattice-models/lattice_results.csv`    | Raw sub-metric data, all seeds                |
+| `experiments/lattice-models/lattice_results.png`    | Three-panel C vs parameter plot               |
+| `experiments/lattice-models/boids_results.csv`      | Boids raw data                                |
+| `experiments/lattice-models/boids_results.png`      | Boids C vs noise level + sub-metric breakdown |

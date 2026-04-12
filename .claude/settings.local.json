@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -c ':*)",
+      "Bash(PYTHONIOENCODING=utf-8 python blind_sweep.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python offset_analysis.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python fss_analysis.py)"
+    ]
+  }
+}
