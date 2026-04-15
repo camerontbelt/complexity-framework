@@ -104,6 +104,24 @@ def wg_agnostic(gzip_ratio):
     peaks at intermediate compressibility — no specific peak value assumed."""
     return float(np.tanh(K_GATE * float(gzip_ratio)) * np.tanh(K_GATE * (1.0 - float(gzip_ratio))))
 
+def wg_agnostic_bp(gzip_ratio_bp):
+    """Bit-packed gzip gate: tanh gate applied to bit-packed compression ratio,
+    clamped to [0, 1]. Bit-packing removes the byte-encoding artifact (gzip ≈ 1/8)
+    by storing 1 bit per binary cell instead of 8 bits. The correction factor
+    (×8 for binary, ×8/log2(q) for q-state) is derivable from first principles.
+
+    Clamped to non-negative because gzip ratios > 1.0 (incompressible + header
+    overhead) make tanh(K*(1-x)) negative — the physical meaning is simply
+    "no complexity signal", not "anti-complexity".
+
+    After bit-packing:
+      C4 rules: ~0.24-0.83 (genuine pattern structure → gate ≈ 0.93-1.0)
+      C3 rules: ~1.0 (incompressible random → gate = 0.0)
+      C1 rules: ~0.01 (trivially ordered → gate ≈ 0.10)
+    """
+    raw = np.tanh(K_GATE * float(gzip_ratio_bp)) * np.tanh(K_GATE * (1.0 - float(gzip_ratio_bp)))
+    return float(max(0.0, raw))
+
 # =========================
 # Opacity metric helpers
 # =========================
@@ -218,6 +236,15 @@ def compute_full_C(volumes):
     gzip_ratio  = float(np.mean(gzip_ratios))
     wG = wg_weight(gzip_ratio)
 
+    # --- w_G (bit-packed): pack binary data to 1 bit/cell before compressing ---
+    # This removes the byte-encoding artifact (gzip ≈ 1/8) and recovers the true
+    # compression ratio. The correction is derivable: for binary data, np.packbits
+    # stores 8 cells per byte instead of 1. For q-state: ceil(log2(q)) bits/cell.
+    packed_grid    = np.packbits(grid.ravel())
+    packed_raw     = packed_grid.tobytes()
+    packed_comp    = gzip.compress(packed_raw)
+    gzip_ratio_bp  = min(len(packed_comp) / max(len(packed_raw), 1), 1.5)
+
     # Full composite — additive opacity channels, multiplicative otherwise
     C = wH * (wOPs + wOPt) * wT * wG
 
@@ -229,6 +256,10 @@ def compute_full_C(volumes):
     wG_a    = wg_agnostic(gzip_ratio)
     C_a     = wH_a * (wOPs_a + wOPt_a) * wT_a * wG_a
 
+    # --- Agnostic composite with bit-packed gzip (fully parameter-free) ---
+    wG_a_bp = wg_agnostic_bp(gzip_ratio_bp)
+    C_a_bp  = wH_a * (wOPs_a + wOPt_a) * wT_a * wG_a_bp
+
     return {
         # v8 composite and weights
         "C": C,
@@ -236,12 +267,16 @@ def compute_full_C(volumes):
         # agnostic composite and weights
         "C_a": C_a,
         "wH_a": wH_a, "wOPs_a": wOPs_a, "wOPt_a": wOPt_a, "wT_a": wT_a, "wG_a": wG_a,
+        # agnostic with bit-packed gzip
+        "C_a_bp": C_a_bp,
+        "wG_a_bp": wG_a_bp,
         # raw sub-component values
         "mean_H": mean_H, "std_H": std_H,
         "op_up": op_up, "op_down": op_down,
         "mi1": mi1, "decay": decay,
         "tc_mean": tc_mean,
         "gzip_ratio": gzip_ratio,
+        "gzip_ratio_bp": gzip_ratio_bp,
     }
 
 # =========================

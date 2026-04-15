@@ -143,4 +143,124 @@ Adding entity scale as a third dimension in the 256-rule scatter plot **did not 
 | `experiments/cellular-automata/ca-multiscale.py` | Multi-scale C on ECA + GoL, computes AUC |
 | `experiments/cellular-automata/eca-full-scatter.py` | All 256 ECA rules, 2-D scatter (C×1, AUC) |
 | `experiments/cellular-automata/eca-scatter-beta.py` | Augments scatter with entity scale from beta function |
+| `experiments/c-profile-fingerprint/compute_C_qary.py` | q-ary C (no binarization, multi-state native) |
+| `experiments/c-profile-fingerprint/criticality_detector.py` | Blind T_c estimator from multi-scale sweep |
+| `experiments/c-profile-fingerprint/potts_qary_sweep.py` | Potts q ∈ {2,3,5,10} q-ary multi-scale sweep |
+| `experiments/c-profile-fingerprint/sir_qary_sweep.py` | SIR (S/I/R natively q=3) q-ary multi-scale sweep |
+
+---
+
+## 7. q-ary C and Blind Critical-Point Detection (2026-04)
+
+Two extensions added during the Potts q-sweep:
+
+**q-ary C** — drops binarization entirely. Each sub-metric generalised to q
+states: `w_H = H/log q`, MI weights use q×q joint/transition counts,
+w_T/w_G are peaked at half-maximum. Coarsening uses per-block mode instead
+of block-mean-then-threshold.
+
+**Criticality detector** — three independent indicators (scale-collapse,
+β-zero, coarsest-peak) with consensus and confidence. Validated to within
+one grid-step on Ising (T_c 2.267 vs 2.269), DP (p_c 0.283 vs 0.287), and
+Potts q-ary (all q ∈ {2,3,5,10}, max error 0.057).
+
+SIR q-ary still offsets (β_est 0.037 vs β_c 0.014) — the offset is not a
+binarization artifact but a measurement-window issue: SIR is transient, so
+a fixed post-burnin window samples the post-epidemic absorbed state rather
+than the active epidemic. See `c-profile-taxonomy.md` §13 for full
+treatment.
+
+---
+
+## 8. Quantisation matters — Gray-Scott q-ary disagrees with binary (2026-04)
+
+`experiments/gray-scott/gray_scott_qary.py` re-runs the 6 Pearson/Munafo
+regimes with q=4 quantile-bin quantisation of the v-field instead of the
+per-frame 75th-percentile threshold used by the original binary pipeline.
+
+**Ranking by peak multi-scale C (q-ary, pools 1/2/4/8, 2 seeds):**
+
+| Regime          | Class    | peak C (q-ary) | peak pool |
+|-----------------|----------|----------------|-----------|
+| chaotic         | chaotic  | 0.195          | ×4        |
+| solitons        | complex  | 0.033          | ×1        |
+| worm_complex    | complex  | 0.023          | ×4        |
+| static_spots    | ordered  | 0.011          | ×8        |
+| self_rep_spots  | complex  | 0.007          | ×1        |
+| dead            | trivial  | 0.000          | ×1        |
+
+The binary-multi-scale paper result has "complex" regimes outranking
+"chaotic" — that's the edge-of-chaos framing. Under q-ary the ordering is
+**reversed**: chaos dominates by 6× and one of the iconic complex regimes
+(self-replicating spots) sits below the ordered (static_spots) case.
+
+**Interpretation.** Binary thresholding at the 75th percentile pins frame
+density to a constant — every frame has the same fraction of "on" cells,
+so `w_H` is eliminated as a signal and C reduces to structure-at-fixed-
+density. Under that measurement, labyrinthine/soliton patterns look most
+structured. q-ary preserves the intensity distribution; chaos has
+maximally mixed intensities *and* local correlations, so `w_H × w_OP`
+is maximised there.
+
+This is not "binary was wrong." Binary was measuring pattern geometry at
+a chosen density; q-ary is measuring information-theoretic structure over
+the raw field. They are different questions and — in Gray-Scott at least
+— they produce genuinely different answers. The paper needs to state
+which one it is reporting and why.
+
+**Scope statement going forward.** On lattice systems with discrete native
+state alphabets (Ising, Potts, Blume-Capel, DP, CP), binary and q-ary C
+agree on the qualitative shape of C(θ) up to overall scale. On continuous
+fields where the quantisation is a design choice (Gray-Scott, Kuramoto,
+neural activations), binary and q-ary C can differ in magnitude *and*
+ordering; results must report the quantisation used.
+
+### 8a. Kuramoto q-ary — peak location robust, detector not
+
+`experiments/c-profile-fingerprint/kuramoto_qary.py` re-runs the 2D-lattice
+Kuramoto sweep (G=64, K ∈ [0, 10], 3 seeds) with q=4 angular-sector
+quantisation of the phase field.
+
+| K    | C×1   | C×2   | C×4   | C×8   |
+|------|-------|-------|-------|-------|
+| 1.0  | 0.010 | 0.007 | 0.004 | 0.008 |
+| 2.0  | 0.019 | 0.013 | 0.007 | 0.005 |
+| **2.5**  | **0.021** | 0.015 | 0.008 | 0.004 |
+| 3.0  | 0.020 | 0.014 | 0.008 | 0.004 |
+| 5.0  | 0.005 | 0.007 | 0.005 | 0.002 |
+| 10.0 | 0.002 | 0.003 | 0.004 | 0.002 |
+
+The q-ary peak at K = 2.5 (pool ×1) coincides with the archived binary peak
+region (K ≈ 2–3.5). **Peak location is robust to quantisation — unlike
+Gray-Scott.** Magnitudes are about 2× lower, consistent with the known
+q=2-vs-q-ary offset.
+
+However, the **criticality detector fails** on this substrate:
+- scale-collapse → K = 2.5 (correct)
+- β-zero → K = 7.0 (noise tail)
+- coarsest-peak → K = 1.0 (C×8 maxes at low K, not at the sync transition)
+- consensus = 3.5, confidence = 0.00
+
+Interpretation: the Kuramoto sync transition is a *mean-field* phase lock,
+not a scale-invariant critical phenomenon. There is no correlation-length
+divergence at K_c that a multi-scale indicator can lock onto. C×8 picks up
+the *sparse* correlations present at low K (nearly independent oscillators
+with slow drift) rather than the ordered sync phase. Two of three detector
+indicators mis-fire, and the consensus is garbage. This is distinct from
+the Blume-Capel D=1.99 tricritical failure (where C×8 went flat) — here
+C×8 is non-zero but peaks at the wrong K.
+
+**Added to scope statement:** the multi-scale detector is validated for
+second-order critical transitions on lattices with diverging correlation
+length. Sync-type and tricritical transitions are open failure modes.
+
+---
+
+## 9. Key Files (appended)
+
+| File | Role |
+|------|------|
 | `experiments/neural-network/gpt2-multiscale.py` | Temporal striding on GPT-2 hidden states |
+| `experiments/gray-scott/gray_scott_qary.py` | Gray-Scott q-ary multi-scale (2026-04) |
+| `experiments/c-profile-fingerprint/kuramoto_qary.py` | Kuramoto q-ary multi-scale (2026-04) |
+| `experiments/c-profile-fingerprint/blume_capel_blind_test_G128.py` | Blume-Capel tricritical blind test |

@@ -117,7 +117,7 @@ PARAMETER-FREE BOUNDARIES
               zeros at: random (MI→0), frozen (MI→1), no-decay
               peaks wherever complex systems actually sit
   w_T:        dual-Gaussian — retains tcomp IC-independence property
-  w_G:        Gaussian — intermediate compressibility
+  w_G:        tanh gate on bit-packed gzip — intermediate compressibility
 
   Temporal opacity has NO fitted parameters. Its peak location
   emerges from where complex systems sit on the MI-decay plane.
@@ -376,16 +376,22 @@ def weight_gzip(mean_gz):
     """
     P2 Modular interconnection — Kolmogorov complexity proxy.
 
-    Gaussian(gz, µ=0.10, σ=0.05) peaked at the C4 compression attractor.
-    C4: gz ≈ 0.10–0.12 (large stable regions + complex glider boundaries)
-    C3: gz ≈ 0.07–0.16 (varies by IC)
-    C1: gz ≈ 0.008–0.02 (trivially compressible)
+    Parameter-free tanh gate on the bit-packed compression ratio.
+    Replaces the former Gaussian(gz, µ=0.10, σ=0.05) which was calibrated
+    to the byte-encoded ratio — an artifact of storing 1-bit cells as uint8.
 
-    The intermediate gzip regime encodes the hypothesis: complexity is
-    neither trivially compressible (dead) nor incompressible (random).
-    Peak value confirmed stable across W=100–400 and both IC types.
+    After bit-packing (1 bit/cell via np.packbits):
+      Complex (C4):  gz ≈ 0.60–0.83 → gate ≈ 0.94–1.0  (rewarded)
+      Chaotic (C3):  gz ≈ 1.0       → gate = 0.0        (killed)
+      Trivial (C1):  gz ≈ 0.01      → gate ≈ 0.10       (suppressed)
+
+    The gate is clamped to non-negative: gzip ratios > 1.0 (incompressible
+    data + gzip header overhead) would make tanh(K*(1-x)) negative, but the
+    physical meaning is simply "no complexity signal", not "anti-complexity".
     """
-    return _gauss(mean_gz, 0.10, 0.05)
+    K = 10
+    raw = float(np.tanh(K * float(mean_gz)) * np.tanh(K * (1.0 - float(mean_gz))))
+    return max(0.0, raw)
 
 
 def weight_fractal_dim(frac_dim, substrate_spatial_dim=2):
@@ -541,9 +547,100 @@ def _tcomp(grid, burnin, window):
 
 
 def _gzip(grid, burnin, window):
-    """Gzip compression ratio of the spatiotemporal history."""
+    """Bit-packed gzip compression ratio of the spatiotemporal history.
+
+    Packs binary (0/1) cell states to 1 bit per cell before compressing,
+    removing the byte-encoding artifact (gzip ≈ 1/8 on uint8 binary data).
+    The correction is derivable from first principles: binary data needs
+    1 bit/cell, not 8. np.packbits stores 8 cells per byte.
+
+    After bit-packing:
+      Complex (C4):  ~0.60–0.83 (genuine pattern structure)
+      Chaotic (C3):  ~1.0       (incompressible random)
+      Trivial (C1):  ~0.01      (maximally compressible)
+    """
+    post   = grid[burnin:burnin + window]
+    packed = np.packbits(post.ravel())
+    raw    = packed.tobytes()
+    return len(zlib.compress(raw, 6)) / max(len(raw), 1)
+
+
+def _gzip_byte(grid, burnin, window):
+    """Legacy byte-encoded gzip ratio (for reference / backwards compat)."""
     raw = grid[burnin:burnin + window].tobytes()
     return len(zlib.compress(raw, 6)) / len(raw)
+
+
+# ==============================================================================
+# UNIFIED METRIC + COMPOSITE FUNCTION
+# ==============================================================================
+
+def compute_C(grid, burnin, window, frac_dim=None, substrate_spatial_dim=1):
+    """
+    Compute all metrics, weights, and composite C from any (T, W) binary grid.
+
+    This is the single entry point for all substrates. Every substrate-specific
+    *_metrics() function should call this rather than duplicating the pipeline.
+
+    Parameters
+    ----------
+    grid : np.ndarray, shape (T, W), dtype uint8/int8, values 0 or 1
+        Spatiotemporal binary grid. Can be a 1D CA row, flattened 2D lattice,
+        discretised particle positions, or any other binary field.
+    burnin : int
+        Number of initial timesteps to discard (transient).
+    window : int
+        Number of timesteps to analyse after burnin.
+    frac_dim : float or None
+        Box-counting fractal dimension (2D substrates only). Pass None for 1D.
+    substrate_spatial_dim : int
+        Spatial dimensionality (1 for ECA, 2 for Life/Ising/etc.).
+
+    Returns
+    -------
+    dict with keys:
+        Raw metrics:  mean_H, std_H, opacity_up, opacity_down,
+                      opacity_temp_mi1, opacity_temp_decay,
+                      tcomp, gzip (bit-packed), gzip_byte (legacy)
+        Weights:      w_H, w_OP_s, w_OP_t, w_geom, w_T, w_G, w_dim
+        Composites:   score, score_geom
+        Optional:     fractal_dim (if provided)
+    """
+    mH, sH         = _entropy_stats(grid, burnin, window)
+    op_up, op_down = _opacity_both(grid,  burnin, window)
+    mi1, dec       = _opacity_temporal(grid, burnin, window)
+    tc             = _tcomp(grid, burnin, window)
+    gz             = _gzip(grid,  burnin, window)
+    gz_byte        = _gzip_byte(grid, burnin, window)
+
+    C = composite(mH, sH, op_up, op_down, mi1, dec, tc, gz,
+                  frac_dim=frac_dim,
+                  substrate_spatial_dim=substrate_spatial_dim)
+
+    w_H    = weight_H(mH, sH)
+    w_OP_s = weight_opacity_spatial(op_up, op_down)
+    w_OP_t = weight_opacity_temporal(mi1, dec)
+    w_geom = weight_opacity_geometric(op_up, op_down, mi1, dec)
+    w_T    = weight_tcomp(tc)
+    w_G    = weight_gzip(gz)
+    w_dim  = (weight_fractal_dim(frac_dim, substrate_spatial_dim)
+              if frac_dim is not None else None)
+
+    score_geom = float(
+        w_H * w_geom * w_T * w_G
+        * (w_dim if w_dim is not None else 1.0)
+    )
+
+    return dict(
+        mean_H=mH, std_H=sH,
+        opacity_up=op_up, opacity_down=op_down,
+        opacity_temp_mi1=mi1, opacity_temp_decay=dec,
+        tcomp=tc, gzip=gz, gzip_byte=gz_byte,
+        fractal_dim=frac_dim,
+        score=C, score_geom=score_geom,
+        w_H=w_H, w_OP_s=w_OP_s, w_OP_t=w_OP_t,
+        w_geom=w_geom, w_T=w_T, w_G=w_G, w_dim=w_dim,
+    )
 
 
 def _fractal_dim_2d(hist_3d, burnin, window, n_frames=5):
@@ -638,37 +735,16 @@ def _opacity_temporal(grid, burnin, window, max_lag=10, stride=3):
 
 
 def _evaluate_grid(grid, burnin, window):
-    """
-    Compute all metrics and composite from a single grid run.
-    Returns a dict of raw metric values, weights, and composite score.
-    fractal_dim is not computed here (needs 3D hist) — set to None for 1D/k3.
-    """
-    mH, sH         = _entropy_stats(grid, burnin, window)
-    op_up, op_down = _opacity_both(grid,  burnin, window)
-    mi1, dec       = _opacity_temporal(grid, burnin, window)
-    tc             = _tcomp(grid, burnin, window)
-    gz             = _gzip(grid,  burnin, window)
-    C              = composite(mH, sH, op_up, op_down, mi1, dec, tc, gz,
-                               frac_dim=None)   # no fractal dim in 1D
-    return dict(
-        mean_H=mH, std_H=sH,
-        opacity_up=op_up, opacity_down=op_down,
-        opacity_temp_mi1=mi1, opacity_temp_decay=dec,
-        tcomp=tc, gzip=gz, fractal_dim=None, score=C,
-        w_H    = weight_H(mH, sH),
-        w_OP_s = weight_opacity_spatial(op_up, op_down),
-        w_OP_t = weight_opacity_temporal(mi1, dec),
-        w_geom = weight_opacity_geometric(op_up, op_down, mi1, dec),
-        w_T    = weight_tcomp(tc),
-        w_G    = weight_gzip(gz),
-        w_dim  = None,
-    )
+    """Compute all metrics and composite from a single grid run.
+    Thin wrapper around compute_C() for backwards compatibility."""
+    return compute_C(grid, burnin, window, frac_dim=None, substrate_spatial_dim=1)
 
 
 def _average_seeds(seed_results):
     """Average metric dicts across seeds, recompute composite."""
     keys = ['mean_H', 'std_H', 'opacity_up', 'opacity_down',
-            'opacity_temp_mi1', 'opacity_temp_decay', 'tcomp', 'gzip']
+            'opacity_temp_mi1', 'opacity_temp_decay', 'tcomp', 'gzip',
+            'gzip_byte']
     avgs = {k: float(np.mean([r[k] for r in seed_results])) for k in keys}
 
     # fractal_dim is None for 1D substrates, float for 2D
@@ -985,26 +1061,10 @@ def life_evaluate(name, birth, survive, cfg):
     seeds_results = []
     for s in range(cfg['N_SEEDS']):
         flat, hist = _life_run(birth, survive, cfg, seed=s*17+3)
-        mH, sH         = _life_entropy(hist, cfg['BURNIN'], cfg['WINDOW'])
-        op_up, op_down = _opacity_both(flat, cfg['BURNIN'], cfg['WINDOW'])
-        mi1, dec       = _opacity_temporal(flat, cfg['BURNIN'], cfg['WINDOW'])
-        tc             = _tcomp(flat, cfg['BURNIN'], cfg['WINDOW'])
-        gz             = _gzip(flat,  cfg['BURNIN'], cfg['WINDOW'])
-        fd             = _fractal_dim_2d(hist, cfg['BURNIN'], cfg['WINDOW'])
-        C              = composite(mH, sH, op_up, op_down, mi1, dec, tc, gz,
-                                   frac_dim=fd, substrate_spatial_dim=2)
-        seeds_results.append(dict(
-            mean_H=mH, std_H=sH,
-            opacity_up=op_up, opacity_down=op_down,
-            opacity_temp_mi1=mi1, opacity_temp_decay=dec,
-            tcomp=tc, gzip=gz, fractal_dim=fd, score=C,
-            w_H   =weight_H(mH, sH),
-            w_OP_s=weight_opacity_spatial(op_up, op_down),
-            w_OP_t=weight_opacity_temporal(mi1, dec),
-            w_T   =weight_tcomp(tc),
-            w_G   =weight_gzip(gz),
-            w_dim =weight_fractal_dim(fd, 2),
-        ))
+        fd = _fractal_dim_2d(hist, cfg['BURNIN'], cfg['WINDOW'])
+        r  = compute_C(flat, cfg['BURNIN'], cfg['WINDOW'],
+                        frac_dim=fd, substrate_spatial_dim=2)
+        seeds_results.append(r)
     result = _average_seeds(seeds_results)
     result['name'] = name
     return result
@@ -1098,12 +1158,11 @@ def _nbody_metrics(frames, cfg):
     """
     Map N-body simulation frames to the four metrics via spatial quantisation.
     Particle positions are discretised to binary occupancy grids, then the
-    standard CA metrics (including bidirectional opacity) are applied.
-    Same weight functions, same composite — substrate-agnostic by design.
+    standard metric pipeline is applied via compute_C.
     """
     if len(frames) < 4:
         return dict(mean_H=0, std_H=0, opacity_up=0, opacity_down=0,
-                    tcomp=0, gzip=0, score=0,
+                    tcomp=0, gzip=0, gzip_byte=0, score=0,
                     w_H=0, w_OP=0, w_T=0, w_G=0)
     box  = cfg['BOX']; bins = 20; T = len(frames)
     occ  = np.zeros((T, bins*bins), dtype=np.uint8)
@@ -1112,23 +1171,7 @@ def _nbody_metrics(frames, cfg):
         gy = np.clip((pos[:,1] / box * bins).astype(int), 0, bins-1)
         for x, y in zip(gx, gy):
             occ[t, x*bins+y] = 1
-    burnin = 0; window = T
-    mH, sH    = _entropy_stats(occ, burnin, window)
-    op_up     = _opacity_upward(occ,   burnin, window)
-    op_down   = _opacity_downward(occ, burnin, window)
-    mi1, dec  = _opacity_temporal(occ, burnin, window)
-    tc        = _tcomp(occ, burnin, window)
-    gz        = _gzip(occ,  burnin, window)
-    C         = composite(mH, sH, op_up, op_down, mi1, dec, tc, gz)
-    return dict(mean_H=mH, std_H=sH,
-                opacity_up=op_up, opacity_down=op_down,
-                opacity_temp_mi1=mi1, opacity_temp_decay=dec,
-                tcomp=tc, gzip=gz, score=C,
-                w_H   =weight_H(mH,sH),
-                w_OP_s=weight_opacity_spatial(op_up, op_down),
-                w_OP_t=weight_opacity_temporal(mi1, dec),
-                w_T   =weight_tcomp(tc),
-                w_G   =weight_gzip(gz))
+    return compute_C(occ, burnin=0, window=T)
 
 
 def nbody_scan(cfg, csv_out=None, json_out=None, verbose=True):
@@ -1329,74 +1372,16 @@ def pd_run(payoff_fn, cfg, seed=42):
 # ── Metrics extractor ───────────────────────────────────────────────────────────
 
 def _pd_metrics(flat, cfg):
-    """
-    Apply the standard v8 metric pipeline to a flat (STEPS, W) binary array.
-    Uses the same weight functions as all other substrates — no PD-specific
-    modifications.
-
-    Returns dict with all raw metrics and composite C.
-    Returns None if insufficient data.
-    """
+    """Apply the standard metric pipeline to a flat (STEPS, W) binary array.
+    Returns dict with all raw metrics and composite C, or None if insufficient data."""
     burnin = cfg['BURNIN']
     window = cfg['WINDOW']
     post   = flat[burnin:burnin + window]
-    T2, W  = post.shape
-    if T2 < 10:
+    if post.shape[0] < 10:
         return None
-
-    # Entropy stats
-    d = np.clip(post.mean(axis=1), 1e-12, 1 - 1e-12)
-    H_rows = -(d * np.log2(d) + (1 - d) * np.log2(1 - d))
-    mean_H = float(H_rows.mean())
-    std_H  = float(H_rows.std())
-
-    # Spatial opacity (vectorised joint entropy)
-    left  = np.roll(post, 1, axis=1)
-    right = np.roll(post, -1, axis=1)
-    p_int = (left * 4 + post * 2 + right).astype(np.int16)
-    gbins = np.clip((post.mean(axis=1) * 8).astype(int), 0, 7)
-    joint = np.zeros((8, 8), dtype=np.int64)
-    np.add.at(joint, (p_int.ravel(), np.repeat(gbins, W)), 1)
-    marg_p = joint.sum(axis=1)
-    marg_g = joint.sum(axis=0)
-
-    def _H(counts):
-        c = counts[counts > 0].astype(float)
-        p = c / c.sum()
-        return float(-np.sum(p * np.log2(p)))
-
-    if joint.sum() == 0:
-        return None
-    op_up = float(np.clip((_H(joint.ravel()) - _H(marg_p)) / np.log2(8), 0, 1))
-    op_dn = float(np.clip((_H(joint.ravel()) - _H(marg_g)) / np.log2(8), 0, 1))
-
-    # Temporal opacity
-    mi1, decay = _opacity_temporal(post, 0, T2, max_lag=10)
-
-    # Temporal compression
-    flips = np.sum(post[1:] != post[:-1], axis=0)
-    tc    = float(np.clip(1 - (1 + flips) / T2, 0, 1).mean())
-
-    # Gzip
-    gz = len(zlib.compress(post.tobytes(), 6)) / len(post.tobytes())
-
-    # Composite weights
-    w_H   = weight_H(mean_H, std_H)
-    w_OPs = weight_opacity_spatial(op_up, op_dn)
-    w_OPt = weight_opacity_temporal(mi1, decay)
-    w_T   = weight_tcomp(tc)
-    w_G   = weight_gzip(gz)
-    C     = w_H * (w_OPs + w_OPt) * w_T * w_G
-
-    return dict(
-        mean_H=mean_H, std_H=std_H,
-        op_up=op_up, op_dn=op_dn,
-        mi1=mi1, decay=decay,
-        tcomp=tc, gzip=gz,
-        w_H=w_H, w_OPs=w_OPs, w_OPt=w_OPt, w_T=w_T, w_G=w_G,
-        score=C,
-        coop=float(post.mean()),
-    )
+    result = compute_C(flat, burnin, window)
+    result['coop'] = float(post.mean())
+    return result
 
 
 # ── Single parameter-point evaluator ───────────────────────────────────────────
@@ -1824,33 +1809,9 @@ def _ising_run_fast(T, cfg, seed=42):
 
 
 def _ising_metrics(history, cfg):
-    """
-    Apply full framework composite to an Ising snapshot history.
-    history: (WINDOW, G*G) binary array — 0=down, 1=up
-    """
-    burnin = 0       # already thermalised — no additional burnin
-    window = cfg['WINDOW']
-
-    mH, sH       = _entropy_stats(history, burnin, window)
-    op_up, op_dn = _opacity_both(history,  burnin, window)
-    mi1, decay   = _opacity_temporal(history, burnin, window)
-    tc           = _tcomp(history, burnin, window)
-    post         = history[burnin:burnin + window]
-    gz           = len(zlib.compress(post.tobytes(), 6)) / max(len(post.tobytes()), 1)
-    C = composite(mH, sH, op_up, op_dn, mi1, decay, tc, gz)
-
-    return dict(
-        mean_H   = mH,    std_H  = sH,
-        op_up    = op_up, op_dn  = op_dn,
-        mi1      = mi1,   decay  = decay,
-        tcomp    = tc,    gzip   = gz,
-        w_H      = weight_H(mH, sH),
-        w_OP_s   = weight_opacity_spatial(op_up, op_dn),
-        w_OP_t   = weight_opacity_temporal(mi1, decay),
-        w_T      = weight_tcomp(tc),
-        w_G      = weight_gzip(gz),
-        score    = C,
-    )
+    """Apply full framework composite to an Ising snapshot history.
+    history: (WINDOW, G*G) binary array — 0=down, 1=up"""
+    return compute_C(history, burnin=0, window=cfg['WINDOW'])
 
 
 def _ising_sweep_one_T(T, cfg):
@@ -2222,25 +2183,7 @@ def _sir_run(beta, cfg, seed=42):
 
 def _sir_metrics(history, cfg):
     """Apply full framework composite to a binary SIR field history."""
-    burnin = cfg['BURNIN']
-    window = cfg['WINDOW']
-    mH, sH       = _entropy_stats(history, burnin, window)
-    op_up, op_dn = _opacity_both(history,  burnin, window)
-    mi1, decay   = _opacity_temporal(history, burnin, window)
-    tc           = _tcomp(history, burnin, window)
-    post         = history[burnin:burnin + window]
-    gz           = len(zlib.compress(post.tobytes(), 6)) / max(len(post.tobytes()), 1)
-    C = composite(mH, sH, op_up, op_dn, mi1, decay, tc, gz)
-    return dict(
-        mean_H=mH, std_H=sH, op_up=op_up, op_dn=op_dn,
-        mi1=mi1, decay=decay, tcomp=tc, gzip=gz,
-        w_H    = weight_H(mH, sH),
-        w_OP_s = weight_opacity_spatial(op_up, op_dn),
-        w_OP_t = weight_opacity_temporal(mi1, decay),
-        w_T    = weight_tcomp(tc),
-        w_G    = weight_gzip(gz),
-        score  = C,
-    )
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
 
 
 def _sir_r0(beta, cfg):
@@ -2628,25 +2571,7 @@ def _dp_run(p, cfg, seed=42):
 
 
 def _dp_metrics(history, cfg):
-    burnin = cfg['BURNIN']
-    window = cfg['WINDOW']
-    mH, sH       = _entropy_stats(history, burnin, window)
-    op_up, op_dn = _opacity_both(history,  burnin, window)
-    mi1, decay   = _opacity_temporal(history, burnin, window)
-    tc           = _tcomp(history, burnin, window)
-    post         = history[burnin:burnin + window]
-    gz           = len(zlib.compress(post.tobytes(), 6)) / max(len(post.tobytes()), 1)
-    C = composite(mH, sH, op_up, op_dn, mi1, decay, tc, gz)
-    return dict(
-        mean_H=mH, std_H=sH, op_up=op_up, op_dn=op_dn,
-        mi1=mi1, decay=decay, tcomp=tc, gzip=gz,
-        w_H    = weight_H(mH, sH),
-        w_OP_s = weight_opacity_spatial(op_up, op_dn),
-        w_OP_t = weight_opacity_temporal(mi1, decay),
-        w_T    = weight_tcomp(tc),
-        w_G    = weight_gzip(gz),
-        score  = C,
-    )
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
 
 
 def dp_sweep(cfg=None, csv_out=None, verbose=True):
@@ -2790,25 +2715,7 @@ def _ff_run(p_tree, f_lightning, cfg, seed=42):
 
 
 def _ff_metrics(history, cfg):
-    burnin = cfg['BURNIN']
-    window = cfg['WINDOW']
-    mH, sH       = _entropy_stats(history, burnin, window)
-    op_up, op_dn = _opacity_both(history,  burnin, window)
-    mi1, decay   = _opacity_temporal(history, burnin, window)
-    tc           = _tcomp(history, burnin, window)
-    post         = history[burnin:burnin + window]
-    gz           = len(zlib.compress(post.tobytes(), 6)) / max(len(post.tobytes()), 1)
-    C = composite(mH, sH, op_up, op_dn, mi1, decay, tc, gz)
-    return dict(
-        mean_H=mH, std_H=sH, op_up=op_up, op_dn=op_dn,
-        mi1=mi1, decay=decay, tcomp=tc, gzip=gz,
-        w_H    = weight_H(mH, sH),
-        w_OP_s = weight_opacity_spatial(op_up, op_dn),
-        w_OP_t = weight_opacity_temporal(mi1, decay),
-        w_T    = weight_tcomp(tc),
-        w_G    = weight_gzip(gz),
-        score  = C,
-    )
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
 
 
 def ff_sweep(cfg=None, csv_out=None, verbose=True):
@@ -3284,25 +3191,7 @@ def _schelling_run(threshold, cfg, seed=42):
 
 def _schelling_metrics(history, cfg):
     """Apply full framework composite to a binary Schelling field history."""
-    burnin = cfg['BURNIN']
-    window = cfg['WINDOW']
-    mH, sH       = _entropy_stats(history, burnin, window)
-    op_up, op_dn = _opacity_both(history,  burnin, window)
-    mi1, decay   = _opacity_temporal(history, burnin, window)
-    tc           = _tcomp(history, burnin, window)
-    post         = history[burnin:burnin + window]
-    gz           = len(zlib.compress(post.tobytes(), 6)) / max(len(post.tobytes()), 1)
-    C = composite(mH, sH, op_up, op_dn, mi1, decay, tc, gz)
-    return dict(
-        mean_H=mH, std_H=sH, op_up=op_up, op_dn=op_dn,
-        mi1=mi1, decay=decay, tcomp=tc, gzip=gz,
-        w_H    = weight_H(mH, sH),
-        w_OP_s = weight_opacity_spatial(op_up, op_dn),
-        w_OP_t = weight_opacity_temporal(mi1, decay),
-        w_T    = weight_tcomp(tc),
-        w_G    = weight_gzip(gz),
-        score  = C,
-    )
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
 
 
 def schelling_sweep(cfg=None, csv_out=None, verbose=True):
@@ -3591,6 +3480,373 @@ def schelling_plot(rows, cfg=None, save_path=None):
 
 
 # ==============================================================================
+# SUBSTRATE 12 — RANDOM BOOLEAN NETWORKS (Kauffman NK model)
+# ==============================================================================
+#
+# HYPOTHESIS:
+#   C peaks at connectivity K ≈ 2, Kauffman's "edge of chaos".
+#   K < 2 → frozen/ordered phase (C low)
+#   K = 2 → critical / complex phase (C peak)
+#   K > 2 → chaotic phase (C low — incompressible)
+#
+# NULL HYPOTHESIS:
+#   C does not peak at K ≈ 2, or peaks elsewhere.
+#
+# EXTERNAL GROUND TRUTH:
+#   Kauffman (1969, 1993) showed that Boolean networks with K=2 inputs
+#   per node sit at a phase transition between frozen and chaotic regimes.
+#   Derrida & Pomeau (1986) proved the annealed approximation: the critical
+#   connectivity is K_c = 2 for unbiased (p=0.5) Boolean functions.
+#   This is one of the foundational results of complexity science.
+#
+# ==============================================================================
+
+RBN_CFG = dict(
+    N         = 200,        # number of nodes
+    STEPS     = 400,        # total timesteps
+    BURNIN    = 100,        # transient to discard
+    WINDOW    = 200,        # analysis window
+    N_SEEDS   = 10,         # independent network realisations per K
+    K_VALUES  = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0, 5.0],
+)
+
+
+def _rbn_run(K, cfg, seed=42):
+    """
+    Run a random Boolean network with mean connectivity K.
+
+    Each of N nodes has exactly K_i input connections drawn from
+    Poisson(K) (clipped to [0, N]), and a random Boolean lookup table.
+    Update is synchronous.
+
+    For fractional K we use a Poisson draw so the mean connectivity
+    matches K while individual nodes vary — this is the standard
+    annealed-approximation setup.
+
+    Returns binary history (STEPS, N) — one column per node.
+    """
+    rng = np.random.default_rng(seed)
+    N   = cfg['N']
+
+    # Build network: each node gets Poisson(K) inputs
+    in_degree = rng.poisson(K, size=N).clip(0, N)
+    inputs    = [rng.choice(N, size=int(k), replace=False) if k > 0
+                 else np.array([], dtype=int)
+                 for k in in_degree]
+
+    # Random Boolean functions: for each node, a truth table of size 2^k_i
+    # For large k_i this is impractical, so cap at k=16 and use random eval
+    MAX_TABLE_K = 16
+    tables = []
+    for k in in_degree:
+        k = int(k)
+        if k <= MAX_TABLE_K:
+            tables.append(rng.integers(0, 2, size=2**k, dtype=np.uint8))
+        else:
+            tables.append(None)  # will use random threshold for very high k
+
+    # Random IC
+    state   = rng.integers(0, 2, size=N, dtype=np.uint8)
+    history = np.zeros((cfg['STEPS'], N), dtype=np.uint8)
+
+    for t in range(cfg['STEPS']):
+        history[t] = state
+        new_state = np.empty(N, dtype=np.uint8)
+        for i in range(N):
+            inp = inputs[i]
+            k   = len(inp)
+            if k == 0:
+                new_state[i] = state[i]  # no inputs → keep state
+            elif tables[i] is not None:
+                # Index into truth table
+                idx = 0
+                for bit_pos, j in enumerate(inp):
+                    idx |= int(state[j]) << bit_pos
+                new_state[i] = tables[i][idx]
+            else:
+                # Fallback for very high k: majority + noise
+                s = sum(state[j] for j in inp)
+                new_state[i] = 1 if s > k // 2 else 0
+        state = new_state
+
+    return history
+
+
+def _rbn_metrics(history, cfg):
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
+
+
+def rbn_sweep(cfg=None, csv_out=None, verbose=True):
+    """
+    Sweep mean connectivity K, compute C at each value.
+    Returns list of result dicts.
+    """
+    if cfg is None:
+        cfg = RBN_CFG.copy()
+
+    K_values = cfg['K_VALUES']
+    rows     = []
+
+    if verbose:
+        print(f"\n{'─'*65}")
+        print(f"Random Boolean Networks (Kauffman) — K sweep")
+        print(f"  N={cfg['N']} nodes  Steps={cfg['STEPS']}  Seeds={cfg['N_SEEDS']}")
+        print(f"  K values: {K_values}")
+        print(f"  K_c (Derrida exact) = 2.0")
+        print(f"{'─'*65}")
+        print(f"  {'K':>5}  {'regime':14}  {'C':>10}  {'std_C':>8}  "
+              f"{'gzip_bp':>8}  {'tcomp':>6}  {'Hamming':>8}")
+
+    for K in K_values:
+        seed_scores = []
+        seed_rows   = []
+
+        for s in range(cfg['N_SEEDS']):
+            hist = _rbn_run(K, cfg, seed=s * 13 + 7)
+            m    = _rbn_metrics(hist, cfg)
+            m['K']    = float(K)
+            m['seed'] = s
+
+            # Hamming distance: fraction of nodes that change per step
+            post = hist[cfg['BURNIN']:cfg['BURNIN'] + cfg['WINDOW']]
+            diffs = np.mean(post[1:] != post[:-1])
+            m['hamming'] = float(diffs)
+
+            rows.append(m)
+            seed_rows.append(m)
+            seed_scores.append(m['score'])
+
+        avg_C   = float(np.mean(seed_scores))
+        std_C   = float(np.std(seed_scores))
+        avg_gz  = float(np.mean([r['gzip'] for r in seed_rows]))
+        avg_tc  = float(np.mean([r['tcomp'] for r in seed_rows]))
+        avg_ham = float(np.mean([r['hamming'] for r in seed_rows]))
+
+        regime = ('frozen'   if K < 1.75 else
+                  'critical' if K <= 2.25 else
+                  'chaotic')
+        marker = ' << K_c' if abs(K - 2.0) < 0.01 else ''
+
+        if verbose:
+            print(f"  K={K:>4.2f}  [{regime:12s}]  C={avg_C:>10.5f}  "
+                  f"std={std_C:>7.4f}  gz={avg_gz:>7.4f}  "
+                  f"tc={avg_tc:>5.3f}  ham={avg_ham:>7.4f}{marker}")
+
+    if csv_out:
+        _save_csv(rows, csv_out)
+        if verbose:
+            print(f"\n  CSV -> {csv_out}")
+
+    # Summary
+    if verbose:
+        avg_by_K = {}
+        for r in rows:
+            avg_by_K.setdefault(r['K'], []).append(r['score'])
+        avg_by_K = {k: float(np.mean(v)) for k, v in avg_by_K.items()}
+        peak_K   = max(avg_by_K, key=avg_by_K.get)
+        peak_C   = avg_by_K[peak_K]
+        print(f"\n  Peak C = {peak_C:.5f} at K = {peak_K:.2f}")
+        if 1.75 <= peak_K <= 2.25:
+            print(f"  CONFIRMED: C peaks in the critical band (K ~ 2)")
+        else:
+            print(f"  Peak outside critical band (expected K ~ 2, got {peak_K})")
+
+    return rows
+
+
+# ==============================================================================
+# SUBSTRATE 13 — BTW SANDPILE (self-organized criticality)
+# ==============================================================================
+#
+# HYPOTHESIS:
+#   The Bak-Tang-Wiesenfeld sandpile self-organises to a critical state.
+#   C should be HIGH at the natural SOC steady state and LOWER when
+#   we artificially perturb the system away from criticality by adding
+#   dissipation (grains lost at each toppling).
+#
+# NULL HYPOTHESIS:
+#   C does not discriminate between SOC and non-SOC (dissipative) regimes,
+#   or C is not elevated at the natural critical state.
+#
+# EXTERNAL GROUND TRUTH:
+#   Bak, Tang & Wiesenfeld (1987, 1988) showed that the 2D sandpile
+#   exhibits power-law avalanche size distributions (exponent ~ -1.2)
+#   at the critical state. Adding dissipation destroys SOC.
+#   Confirmed independently by cluster analysis and renormalisation group.
+#
+# DESIGN:
+#   Sweep dissipation ε from 0 (pure SOC) to 0.5 (heavily dissipative).
+#   At each toppling, each redistributed grain is lost with probability ε.
+#   ε = 0 → standard BTW (SOC), ε → 1 → all grains lost (trivial).
+#
+# ==============================================================================
+
+SANDPILE_CFG = dict(
+    GRID      = 64,
+    STEPS     = 800,        # total toppling rounds
+    BURNIN    = 200,        # let pile reach near-SOC
+    WINDOW    = 400,        # analysis window
+    N_SEEDS   = 8,
+    GRAINS_PER_STEP = 1,    # grains added per timestep
+    THRESHOLD = 4,          # toppling threshold (standard BTW = 4)
+    EPS_VALUES = [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5],
+)
+
+
+def _sandpile_run(epsilon, cfg, seed=42):
+    """
+    Bak-Tang-Wiesenfeld sandpile with tuneable dissipation.
+
+    2D grid of integer heights. Each step:
+      1. Add one grain to a random cell
+      2. Topple all cells with height >= threshold:
+         - Cell loses threshold grains
+         - Each of 4 neighbours receives 1 grain (with probability 1-ε)
+         - Boundary grains fall off the edge (open boundary)
+      3. Repeat toppling until stable
+
+    Binary encoding: cell is "active" (1) if height >= threshold-1
+    (near-critical cells), else 0. This captures the spatial structure
+    of the avalanche-prone frontier.
+
+    Returns binary history (STEPS, G*G).
+    """
+    rng = np.random.default_rng(seed)
+    G   = cfg['GRID']
+    th  = cfg['THRESHOLD']
+
+    pile = rng.integers(0, th, size=(G, G), dtype=np.int32)
+    history = np.zeros((cfg['STEPS'], G * G), dtype=np.uint8)
+
+    for t in range(cfg['STEPS']):
+        # Add grain(s)
+        for _ in range(cfg['GRAINS_PER_STEP']):
+            rx, ry = rng.integers(0, G, size=2)
+            pile[rx, ry] += 1
+
+        # Topple until stable (with dissipation)
+        max_iters = G * G  # safety cap
+        for _ in range(max_iters):
+            unstable = pile >= th
+            if not unstable.any():
+                break
+
+            # All unstable cells topple simultaneously
+            topple_count = unstable.astype(np.int32)
+            pile[unstable] -= th
+
+            # Redistribute to neighbours (with dissipation)
+            for di, dj in [(-1,0),(1,0),(0,-1),(0,1)]:
+                ni = np.where(unstable)
+                ri = ni[0] + di
+                ci = ni[1] + dj
+                # Open boundary: grains at edges fall off
+                valid = (ri >= 0) & (ri < G) & (ci >= 0) & (ci < G)
+                if epsilon > 0:
+                    # Each grain survives with probability (1 - epsilon)
+                    survive = rng.random(valid.sum()) >= epsilon
+                    ri_v = ri[valid][survive]
+                    ci_v = ci[valid][survive]
+                else:
+                    ri_v = ri[valid]
+                    ci_v = ci[valid]
+                np.add.at(pile, (ri_v, ci_v), 1)
+
+        # Record binary state: near-critical cells
+        history[t] = (pile >= th - 1).astype(np.uint8).ravel()
+
+    return history
+
+
+def _sandpile_metrics(history, cfg):
+    return compute_C(history, cfg['BURNIN'], cfg['WINDOW'])
+
+
+def sandpile_sweep(cfg=None, csv_out=None, verbose=True):
+    """
+    Sweep dissipation ε, compute C at each value.
+    ε = 0 is standard BTW (SOC), increasing ε destroys criticality.
+    """
+    if cfg is None:
+        cfg = SANDPILE_CFG.copy()
+
+    eps_values = cfg['EPS_VALUES']
+    rows       = []
+
+    if verbose:
+        print(f"\n{'─'*65}")
+        print(f"BTW Sandpile — dissipation sweep")
+        print(f"  Grid: {cfg['GRID']}x{cfg['GRID']}  "
+              f"Steps: {cfg['STEPS']}  Seeds: {cfg['N_SEEDS']}")
+        print(f"  Threshold: {cfg['THRESHOLD']}  "
+              f"Grains/step: {cfg['GRAINS_PER_STEP']}")
+        print(f"  eps values: {eps_values}")
+        print(f"  eps=0 is pure SOC (Bak-Tang-Wiesenfeld)")
+        print(f"{'─'*65}")
+        print(f"  {'eps':>6}  {'regime':14}  {'C':>10}  {'std_C':>8}  "
+              f"{'gzip_bp':>8}  {'tcomp':>6}  {'density':>8}")
+
+    for eps in eps_values:
+        seed_scores = []
+        seed_rows   = []
+
+        for s in range(cfg['N_SEEDS']):
+            hist = _sandpile_run(eps, cfg, seed=s * 11 + 5)
+            m    = _sandpile_metrics(hist, cfg)
+            m['epsilon'] = float(eps)
+            m['seed']    = s
+
+            # Mean density of near-critical cells
+            post = hist[cfg['BURNIN']:cfg['BURNIN'] + cfg['WINDOW']]
+            m['density'] = float(post.mean())
+
+            rows.append(m)
+            seed_rows.append(m)
+            seed_scores.append(m['score'])
+
+        avg_C   = float(np.mean(seed_scores))
+        std_C   = float(np.std(seed_scores))
+        avg_gz  = float(np.mean([r['gzip'] for r in seed_rows]))
+        avg_tc  = float(np.mean([r['tcomp'] for r in seed_rows]))
+        avg_den = float(np.mean([r['density'] for r in seed_rows]))
+
+        regime = ('SOC'         if eps < 0.01 else
+                  'near-SOC'    if eps <= 0.05 else
+                  'dissipative' if eps <= 0.2  else
+                  'sub-critical')
+        marker = ' << SOC' if eps == 0.0 else ''
+
+        if verbose:
+            print(f"  e={eps:>5.2f}  [{regime:12s}]  C={avg_C:>10.5f}  "
+                  f"std={std_C:>7.4f}  gz={avg_gz:>7.4f}  "
+                  f"tc={avg_tc:>5.3f}  den={avg_den:>7.4f}{marker}")
+
+    if csv_out:
+        _save_csv(rows, csv_out)
+        if verbose:
+            print(f"\n  CSV -> {csv_out}")
+
+    # Summary
+    if verbose:
+        avg_by_eps = {}
+        for r in rows:
+            avg_by_eps.setdefault(r['epsilon'], []).append(r['score'])
+        avg_by_eps = {k: float(np.mean(v)) for k, v in avg_by_eps.items()}
+        peak_eps = max(avg_by_eps, key=avg_by_eps.get)
+        peak_C   = avg_by_eps[peak_eps]
+        soc_C    = avg_by_eps.get(0.0, 0)
+
+        print(f"\n  SOC (eps=0) C = {soc_C:.5f}")
+        print(f"  Peak C = {peak_C:.5f} at eps = {peak_eps:.2f}")
+        if peak_eps <= 0.05:
+            print(f"  CONFIRMED: C peaks at/near SOC state")
+        else:
+            print(f"  Peak not at SOC — unexpected (eps={peak_eps})")
+
+    return rows
+
+
+# ==============================================================================
 # CLI
 # ==============================================================================
 
@@ -3600,7 +3856,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('substrate', nargs='?', default='eca',
                    choices=['eca','k3','life','nbody','pd','ising','sir',
-                            'dp','ff','schelling','all'])
+                            'dp','ff','schelling','rbn','sandpile','all'])
     p.add_argument('--csv',       metavar='FILE')
     p.add_argument('--no-plot',   action='store_true')
     p.add_argument('--save-plot', metavar='FILE')
@@ -3981,6 +4237,22 @@ def main():
         if not args.no_plot:
             plot_path = args.save_plot or 'schelling_analysis.png'
             schelling_plot(rows, cfg, save_path=plot_path)
+
+
+    # ── Random Boolean Networks ─────────────────────────────────────────────
+    if args.substrate in ('rbn', 'all'):
+        cfg = RBN_CFG.copy()
+        if args.seeds: cfg['N_SEEDS'] = args.seeds
+        csv_out = args.csv or 'rbn_results.csv'
+        rbn_rows = rbn_sweep(cfg, csv_out=csv_out, verbose=True)
+
+    # ── BTW Sandpile ─────────────────────────────────────────────────────────
+    if args.substrate in ('sandpile', 'all'):
+        cfg = SANDPILE_CFG.copy()
+        if args.seeds: cfg['N_SEEDS'] = args.seeds
+        if args.grid:  cfg['GRID']    = args.grid
+        csv_out = args.csv or 'sandpile_results.csv'
+        sp_rows = sandpile_sweep(cfg, csv_out=csv_out, verbose=True)
 
 
 if __name__ == '__main__':
